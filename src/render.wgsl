@@ -11,7 +11,7 @@ fn vs_main(
     var out: VertexOutput;
     out.color = vec3<f32>(0.2, 0.1, 0.4);
     out.clip_position = vec4<f32>(position, 1.0);
-    out.tex_coords = (position.xy + 1) / 2;
+    out.tex_coords = (position.xy + 1) * 2;
     return out;
 }
 

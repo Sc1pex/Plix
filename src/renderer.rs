@@ -50,12 +50,14 @@ pub struct Renderer {
 
     texture: Texture,
     texture_bind_group: wgpu::BindGroup,
+    texture_bind_group_layout: wgpu::BindGroupLayout,
+
     compute: Compute,
 }
 
 impl Renderer {
-    pub fn new(wgpu: &egui_wgpu::RenderState, dim: [u32; 2]) -> Self {
-        let device = &wgpu.device;
+    pub fn new(render_state: &egui_wgpu::RenderState, dim: [u32; 2]) -> Self {
+        let device = &render_state.device;
 
         let texture_format = wgpu::TextureFormat::Rgba8Unorm;
         let texture = Texture::new(dim[0], dim[1], texture_format, device);
@@ -113,33 +115,15 @@ impl Renderer {
             usage: wgpu::BufferUsages::INDEX,
         });
 
-        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: None,
-            bind_group_layouts: &[&texture_bind_group_layout],
-            push_constant_ranges: &[],
-        });
+        let target_format: wgpu::ColorTargetState = render_state.target_format.into();
+        let pipeline = Self::create_pipeline(
+            target_format.clone(),
+            &shader,
+            &[&texture_bind_group_layout],
+            device,
+        );
 
-        let target_format: wgpu::ColorTargetState = wgpu.target_format.into();
-        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: None,
-            layout: Some(&pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &shader,
-                entry_point: "vs_main",
-                buffers: &[Vertex::desc()],
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &shader,
-                entry_point: "fs_main",
-                targets: &[Some(target_format.clone())],
-            }),
-            primitive: wgpu::PrimitiveState::default(),
-            depth_stencil: None,
-            multisample: wgpu::MultisampleState::default(),
-            multiview: None,
-        });
-
-        let compute = Compute::new(wgpu, &texture.view, texture_format, dim);
+        let compute = Compute::new(device, &texture.view, texture_format, dim);
 
         Self {
             pipeline,
@@ -151,16 +135,35 @@ impl Renderer {
 
             texture,
             texture_bind_group,
+            texture_bind_group_layout,
 
             compute,
         }
+    }
+
+    pub fn reload_shader(&mut self, device: &wgpu::Device) {
+        self.shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: None,
+            source: wgpu::ShaderSource::Wgsl(
+                std::fs::read_to_string("src/render.wgsl")
+                    .expect("Shader not found")
+                    .into(),
+            ),
+        });
+
+        self.pipeline = Self::create_pipeline(
+            self.target_format.clone(),
+            &self.shader,
+            &[&self.texture_bind_group_layout],
+            device,
+        );
     }
 
     pub fn check_resize(&mut self, device: &wgpu::Device, dim: [u32; 2]) -> bool {
         if self.texture.width != dim[0] || self.texture.height != dim[1] {
             self.texture = Texture::new(dim[0], dim[1], self.texture.format, device);
 
-            let texture_bind_group_layout =
+            self.texture_bind_group_layout =
                 device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                     label: None,
                     entries: &[
@@ -180,7 +183,7 @@ impl Renderer {
                 });
             self.texture_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
                 label: None,
-                layout: &texture_bind_group_layout,
+                layout: &self.texture_bind_group_layout,
                 entries: &[
                     wgpu::BindGroupEntry {
                         binding: 0,
@@ -193,31 +196,12 @@ impl Renderer {
                 ],
             });
 
-            let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: None,
-                bind_group_layouts: &[&texture_bind_group_layout],
-                push_constant_ranges: &[],
-            });
-
-            self.pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                label: None,
-                layout: Some(&pipeline_layout),
-                vertex: wgpu::VertexState {
-                    module: &self.shader,
-                    entry_point: "vs_main",
-                    buffers: &[Vertex::desc()],
-                },
-                fragment: Some(wgpu::FragmentState {
-                    module: &self.shader,
-                    entry_point: "fs_main",
-                    targets: &[Some(self.target_format.clone())],
-                }),
-                primitive: wgpu::PrimitiveState::default(),
-                depth_stencil: None,
-                multisample: wgpu::MultisampleState::default(),
-                multiview: None,
-            });
-
+            self.pipeline = Self::create_pipeline(
+                self.target_format.clone(),
+                &self.shader,
+                &[&self.texture_bind_group_layout],
+                device,
+            );
             return true;
         }
         false
@@ -239,9 +223,65 @@ impl Renderer {
         render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
         render_pass.draw_indexed(0..INDICES.len() as u32, 0, 0..1)
     }
+
+    fn create_pipeline(
+        target_format: wgpu::ColorTargetState,
+        shader: &wgpu::ShaderModule,
+        bind_group_layouts: &[&wgpu::BindGroupLayout],
+        device: &wgpu::Device,
+    ) -> wgpu::RenderPipeline {
+        let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: None,
+            bind_group_layouts,
+            push_constant_ranges: &[],
+        });
+
+        device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: None,
+            layout: Some(&layout),
+            vertex: wgpu::VertexState {
+                module: shader,
+                entry_point: "vs_main",
+                buffers: &[Vertex::desc()],
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: shader,
+                entry_point: "fs_main",
+                targets: &[Some(target_format.clone())],
+            }),
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState::default(),
+            primitive: wgpu::PrimitiveState::default(),
+            multiview: None,
+        })
+    }
 }
 
-pub struct RendererCallback {}
+pub struct RendererCallback {
+    pub fs_event: Option<notify::Event>,
+}
+
+impl RendererCallback {
+    fn handle_fs(&self, renderer: &mut Renderer, device: &wgpu::Device) -> Option<()> {
+        let event = self.fs_event.clone()?;
+        if matches!(
+            event,
+            notify::Event {
+                kind: notify::EventKind::Access(notify::event::AccessKind::Close(
+                    notify::event::AccessMode::Write
+                )),
+                ..
+            }
+        ) {
+            let path = event.paths.first()?.to_str()?;
+            if path.contains("render.wgsl") {
+                renderer.reload_shader(device);
+            }
+        }
+
+        Some(())
+    }
+}
 
 impl egui_wgpu::CallbackTrait for RendererCallback {
     fn prepare(
@@ -253,6 +293,8 @@ impl egui_wgpu::CallbackTrait for RendererCallback {
         resources: &mut egui_wgpu::CallbackResources,
     ) -> Vec<wgpu::CommandBuffer> {
         let renderer: &mut Renderer = resources.get_mut().unwrap();
+
+        self.handle_fs(renderer, device);
         renderer.prepare(device, queue, screen_descriptor.size_in_pixels);
         Vec::new()
     }

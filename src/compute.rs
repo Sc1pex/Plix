@@ -1,8 +1,5 @@
 use bytemuck::{Pod, Zeroable};
-use eframe::{
-    egui_wgpu,
-    wgpu::{self, util::DeviceExt},
-};
+use eframe::wgpu::{self, util::DeviceExt};
 
 pub struct Compute {
     pipeline: wgpu::ComputePipeline,
@@ -19,13 +16,11 @@ pub struct Compute {
 
 impl Compute {
     pub fn new(
-        wgpu: &egui_wgpu::RenderState,
+        device: &wgpu::Device,
         texture_view: &wgpu::TextureView,
         texture_format: wgpu::TextureFormat,
         texture_dim: [u32; 2],
     ) -> Self {
-        let device = &wgpu.device;
-
         let compute_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: None,
             source: wgpu::ShaderSource::Wgsl(

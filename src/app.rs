@@ -1,9 +1,11 @@
 use crate::renderer::{Renderer, RendererCallback};
 use eframe::egui_wgpu;
 use eframe::{egui, CreationContext};
+use notify::Watcher;
 
 pub struct App {
-    angle: f32,
+    fs_rx: std::sync::mpsc::Receiver<Result<notify::Event, notify::Error>>,
+    _watcher: notify::RecommendedWatcher,
 }
 
 impl App {
@@ -16,7 +18,19 @@ impl App {
             .callback_resources
             .insert(Renderer::new(wgpu_render_state, [10, 10]));
 
-        Some(Self { angle: 0. })
+        let (tx, rx) = std::sync::mpsc::channel();
+        let mut watcher = notify::RecommendedWatcher::new(tx, notify::Config::default()).ok()?;
+        watcher
+            .watch(
+                std::path::Path::new("src/"),
+                notify::RecursiveMode::Recursive,
+            )
+            .ok()?;
+
+        Some(Self {
+            fs_rx: rx,
+            _watcher: watcher,
+        })
     }
 }
 
@@ -40,18 +54,35 @@ impl eframe::App for App {
                     self.custom_painting(ui);
                 });
             });
+
+        ctx.request_repaint();
     }
 }
 
 impl App {
     fn custom_painting(&mut self, ui: &mut egui::Ui) {
         let size = ui.available_size();
-        let (rect, response) = ui.allocate_exact_size(size, egui::Sense::drag());
+        let (_, rect) = ui.allocate_space(size);
 
-        self.angle += response.drag_motion().x * 0.01;
+        let fs_event = match self.fs_rx.try_recv() {
+            Ok(e) => match e {
+                Ok(e) => Some(e),
+                Err(e) => {
+                    println!("Fs watcher error: {}", e);
+                    None
+                }
+            },
+            Err(e) => {
+                if matches!(e, std::sync::mpsc::TryRecvError::Disconnected) {
+                    println!("Fs watcher channel closed")
+                }
+                None
+            }
+        };
+
         ui.painter().add(egui_wgpu::Callback::new_paint_callback(
             rect,
-            RendererCallback {},
+            RendererCallback { fs_event },
         ));
     }
 }
