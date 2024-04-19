@@ -1,6 +1,6 @@
 use crate::compute::Compute;
 use crate::renderer::Renderer;
-use eframe::{egui, CreationContext};
+use eframe::{egui, emath, CreationContext};
 use eframe::{egui_wgpu, wgpu};
 use notify::Watcher;
 
@@ -85,13 +85,14 @@ impl App {
 
         ui.painter().add(egui_wgpu::Callback::new_paint_callback(
             rect,
-            RendererCallback { fs_event },
+            RendererCallback { fs_event, size },
         ));
     }
 }
 
 pub struct RendererCallback {
-    pub fs_event: Option<notify::Event>,
+    fs_event: Option<notify::Event>,
+    size: emath::Vec2,
 }
 
 impl RendererCallback {
@@ -129,14 +130,14 @@ impl egui_wgpu::CallbackTrait for RendererCallback {
         &self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
-        screen_descriptor: &egui_wgpu::ScreenDescriptor,
+        _screen_descriptor: &egui_wgpu::ScreenDescriptor,
         _egui_encoder: &mut wgpu::CommandEncoder,
         resources: &mut egui_wgpu::CallbackResources,
     ) -> Vec<wgpu::CommandBuffer> {
         let (renderer, compute): &mut (Renderer, Compute) = resources.get_mut().unwrap();
 
         self.handle_fs(renderer, compute, device);
-        if renderer.check_resize(device, screen_descriptor.size_in_pixels) {
+        if renderer.check_resize(device, [self.size.x as u32, self.size.y as u32]) {
             compute.update_texture(device, &renderer.texture);
             compute.update_data(queue, [renderer.texture.width, renderer.texture.height]);
         }
