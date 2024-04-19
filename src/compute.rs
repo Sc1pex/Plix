@@ -1,3 +1,4 @@
+use crate::texture::Texture;
 use bytemuck::{Pod, Zeroable};
 use eframe::wgpu::{self, util::DeviceExt};
 
@@ -15,12 +16,7 @@ pub struct Compute {
 }
 
 impl Compute {
-    pub fn new(
-        device: &wgpu::Device,
-        texture_view: &wgpu::TextureView,
-        texture_format: wgpu::TextureFormat,
-        texture_dim: [u32; 2],
-    ) -> Self {
+    pub fn new(device: &wgpu::Device, texture: &Texture) -> Self {
         let compute_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: None,
             source: wgpu::ShaderSource::Wgsl(
@@ -31,8 +27,8 @@ impl Compute {
         });
 
         let data = ComputeDataUniform {
-            width: texture_dim[0],
-            height: texture_dim[1],
+            width: texture.width,
+            height: texture.height,
         };
         let data_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: None,
@@ -69,11 +65,7 @@ impl Compute {
                 entries: &[wgpu::BindGroupLayoutEntry {
                     binding: 0,
                     visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::StorageTexture {
-                        access: wgpu::StorageTextureAccess::WriteOnly,
-                        format: texture_format,
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                    },
+                    ty: texture.storage_texture_binding_type(),
                     count: None,
                 }],
             });
@@ -82,22 +74,15 @@ impl Compute {
             layout: &texture_bind_group_layout,
             entries: &[wgpu::BindGroupEntry {
                 binding: 0,
-                resource: wgpu::BindingResource::TextureView(texture_view),
+                resource: texture.texture_binding_resource(),
             }],
         });
 
-        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: None,
-            bind_group_layouts: &[&data_bind_group_layout, &texture_bind_group_layout],
-            push_constant_ranges: &[],
-        });
-
-        let pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-            label: None,
-            layout: Some(&pipeline_layout),
-            module: &compute_shader,
-            entry_point: "main",
-        });
+        let pipeline = Self::create_pipeline(
+            device,
+            &compute_shader,
+            &[&data_bind_group_layout, &texture_bind_group_layout],
+        );
 
         Self {
             pipeline,
@@ -132,23 +117,34 @@ impl Compute {
         queue.submit(Some(encoder.finish()));
     }
 
-    pub fn update_texture(
-        &mut self,
-        device: &wgpu::Device,
-        texture_view: &wgpu::TextureView,
-        texture_format: wgpu::TextureFormat,
-    ) {
+    pub fn reload_shader(&mut self, device: &wgpu::Device) {
+        self.compute_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: None,
+            source: wgpu::ShaderSource::Wgsl(
+                std::fs::read_to_string("src/compute.wgsl")
+                    .expect("Compute shader not found")
+                    .into(),
+            ),
+        });
+
+        self.pipeline = Self::create_pipeline(
+            device,
+            &self.compute_shader,
+            &[
+                &self.data_bind_group_layout,
+                &self.texture_bind_group_layout,
+            ],
+        );
+    }
+
+    pub fn update_texture(&mut self, device: &wgpu::Device, texture: &Texture) {
         self.texture_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 label: None,
                 entries: &[wgpu::BindGroupLayoutEntry {
                     binding: 0,
                     visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::StorageTexture {
-                        access: wgpu::StorageTextureAccess::WriteOnly,
-                        format: texture_format,
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                    },
+                    ty: texture.storage_texture_binding_type(),
                     count: None,
                 }],
             });
@@ -157,25 +153,37 @@ impl Compute {
             layout: &self.texture_bind_group_layout,
             entries: &[wgpu::BindGroupEntry {
                 binding: 0,
-                resource: wgpu::BindingResource::TextureView(texture_view),
+                resource: texture.texture_binding_resource(),
             }],
         });
 
-        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: None,
-            bind_group_layouts: &[
+        self.pipeline = Self::create_pipeline(
+            device,
+            &self.compute_shader,
+            &[
                 &self.data_bind_group_layout,
                 &self.texture_bind_group_layout,
             ],
+        );
+    }
+
+    pub fn create_pipeline(
+        device: &wgpu::Device,
+        shader: &wgpu::ShaderModule,
+        bind_group_layouts: &[&wgpu::BindGroupLayout],
+    ) -> wgpu::ComputePipeline {
+        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: None,
+            bind_group_layouts,
             push_constant_ranges: &[],
         });
 
-        self.pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+        device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
             label: None,
             layout: Some(&pipeline_layout),
-            module: &self.compute_shader,
+            module: shader,
             entry_point: "main",
-        });
+        })
     }
 
     pub fn update_data(&mut self, queue: &wgpu::Queue, texture_dim: [u32; 2]) {

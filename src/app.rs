@@ -1,6 +1,7 @@
-use crate::renderer::{Renderer, RendererCallback};
-use eframe::egui_wgpu;
+use crate::compute::Compute;
+use crate::renderer::Renderer;
 use eframe::{egui, CreationContext};
+use eframe::{egui_wgpu, wgpu};
 use notify::Watcher;
 
 pub struct App {
@@ -11,12 +12,14 @@ pub struct App {
 impl App {
     pub fn new(cc: &CreationContext) -> Option<Self> {
         let wgpu_render_state = cc.wgpu_render_state.as_ref()?;
+        let renderer = Renderer::new(wgpu_render_state, [10, 10]);
+        let compute = Compute::new(&wgpu_render_state.device, &renderer.texture);
 
         wgpu_render_state
             .renderer
             .write()
             .callback_resources
-            .insert(Renderer::new(wgpu_render_state, [10, 10]));
+            .insert((renderer, compute));
 
         let (tx, rx) = std::sync::mpsc::channel();
         let mut watcher = notify::RecommendedWatcher::new(tx, notify::Config::default()).ok()?;
@@ -84,5 +87,72 @@ impl App {
             rect,
             RendererCallback { fs_event },
         ));
+    }
+}
+
+pub struct RendererCallback {
+    pub fs_event: Option<notify::Event>,
+}
+
+impl RendererCallback {
+    fn handle_fs(
+        &self,
+        renderer: &mut Renderer,
+        compute: &mut Compute,
+        device: &wgpu::Device,
+    ) -> Option<()> {
+        let event = self.fs_event.clone()?;
+        if matches!(
+            event,
+            notify::Event {
+                kind: notify::EventKind::Access(notify::event::AccessKind::Close(
+                    notify::event::AccessMode::Write
+                )),
+                ..
+            }
+        ) {
+            let path = event.paths.first()?.to_str()?;
+            if path.contains("render.wgsl") {
+                renderer.reload_shader(device);
+            }
+            if path.contains("compute.wgsl") {
+                compute.reload_shader(device);
+            }
+        }
+
+        Some(())
+    }
+}
+
+impl egui_wgpu::CallbackTrait for RendererCallback {
+    fn prepare(
+        &self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        screen_descriptor: &egui_wgpu::ScreenDescriptor,
+        _egui_encoder: &mut wgpu::CommandEncoder,
+        resources: &mut egui_wgpu::CallbackResources,
+    ) -> Vec<wgpu::CommandBuffer> {
+        let (renderer, compute): &mut (Renderer, Compute) = resources.get_mut().unwrap();
+
+        self.handle_fs(renderer, compute, device);
+        if renderer.check_resize(device, screen_descriptor.size_in_pixels) {
+            compute.update_texture(device, &renderer.texture);
+            compute.update_data(queue, [renderer.texture.width, renderer.texture.height]);
+        }
+
+        compute.step(device, queue);
+
+        Vec::new()
+    }
+
+    fn paint<'a>(
+        &self,
+        _info: egui::PaintCallbackInfo,
+        render_pass: &mut wgpu::RenderPass<'a>,
+        resources: &'a egui_wgpu::CallbackResources,
+    ) {
+        let (renderer, _): &(Renderer, Compute) = resources.get().unwrap();
+        renderer.paint(render_pass);
     }
 }

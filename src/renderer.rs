@@ -1,7 +1,7 @@
-use crate::{compute::Compute, texture::Texture};
+use crate::texture::Texture;
 use bytemuck::{Pod, Zeroable};
 use eframe::{
-    egui, egui_wgpu,
+    egui_wgpu,
     wgpu::{self, util::DeviceExt},
 };
 
@@ -48,11 +48,9 @@ pub struct Renderer {
     vertex_buffer: wgpu::Buffer,
     index_buffer: wgpu::Buffer,
 
-    texture: Texture,
+    pub texture: Texture,
     texture_bind_group: wgpu::BindGroup,
     texture_bind_group_layout: wgpu::BindGroupLayout,
-
-    compute: Compute,
 }
 
 impl Renderer {
@@ -123,8 +121,6 @@ impl Renderer {
             device,
         );
 
-        let compute = Compute::new(device, &texture.view, texture_format, dim);
-
         Self {
             pipeline,
             shader,
@@ -136,8 +132,6 @@ impl Renderer {
             texture,
             texture_bind_group,
             texture_bind_group_layout,
-
-            compute,
         }
     }
 
@@ -207,15 +201,6 @@ impl Renderer {
         false
     }
 
-    pub fn prepare(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, dim: [u32; 2]) {
-        if self.check_resize(device, dim) {
-            self.compute
-                .update_texture(device, &self.texture.view, self.texture.format);
-            self.compute.update_data(queue, dim);
-        }
-        self.compute.step(device, queue);
-    }
-
     pub fn paint<'rp>(&'rp self, render_pass: &mut wgpu::RenderPass<'rp>) {
         render_pass.set_pipeline(&self.pipeline);
         render_pass.set_bind_group(0, &self.texture_bind_group, &[]);
@@ -254,58 +239,5 @@ impl Renderer {
             primitive: wgpu::PrimitiveState::default(),
             multiview: None,
         })
-    }
-}
-
-pub struct RendererCallback {
-    pub fs_event: Option<notify::Event>,
-}
-
-impl RendererCallback {
-    fn handle_fs(&self, renderer: &mut Renderer, device: &wgpu::Device) -> Option<()> {
-        let event = self.fs_event.clone()?;
-        if matches!(
-            event,
-            notify::Event {
-                kind: notify::EventKind::Access(notify::event::AccessKind::Close(
-                    notify::event::AccessMode::Write
-                )),
-                ..
-            }
-        ) {
-            let path = event.paths.first()?.to_str()?;
-            if path.contains("render.wgsl") {
-                renderer.reload_shader(device);
-            }
-        }
-
-        Some(())
-    }
-}
-
-impl egui_wgpu::CallbackTrait for RendererCallback {
-    fn prepare(
-        &self,
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-        screen_descriptor: &egui_wgpu::ScreenDescriptor,
-        _egui_encoder: &mut wgpu::CommandEncoder,
-        resources: &mut egui_wgpu::CallbackResources,
-    ) -> Vec<wgpu::CommandBuffer> {
-        let renderer: &mut Renderer = resources.get_mut().unwrap();
-
-        self.handle_fs(renderer, device);
-        renderer.prepare(device, queue, screen_descriptor.size_in_pixels);
-        Vec::new()
-    }
-
-    fn paint<'a>(
-        &self,
-        _info: egui::PaintCallbackInfo,
-        render_pass: &mut wgpu::RenderPass<'a>,
-        resources: &'a egui_wgpu::CallbackResources,
-    ) {
-        let renderer: &Renderer = resources.get().unwrap();
-        renderer.paint(render_pass);
     }
 }

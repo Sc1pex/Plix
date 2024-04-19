@@ -10,5 +10,5 @@ struct Data {
 fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     let u = f32(global_id.x) / f32(data.width);
     let v = f32(global_id.y) / f32(data.height);
-    textureStore(texture, global_id.xy, vec4<f32>(u, v, 0, 1));
+    textureStore(texture, global_id.xy, vec4<f32>(u, v, 0.2, 1));
 }

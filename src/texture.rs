@@ -59,6 +59,13 @@ impl Texture {
             multisampled: false,
         }
     }
+    pub fn storage_texture_binding_type(&self) -> wgpu::BindingType {
+        wgpu::BindingType::StorageTexture {
+            access: wgpu::StorageTextureAccess::WriteOnly,
+            format: self.format,
+            view_dimension: wgpu::TextureViewDimension::D2,
+        }
+    }
     pub fn sampler_binding_type(&self) -> wgpu::BindingType {
         wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering)
     }
