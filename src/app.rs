@@ -39,6 +39,8 @@ impl App {
 
 impl eframe::App for App {
     fn update(&mut self, ctx: &eframe::egui::Context, _frame: &mut eframe::Frame) {
+        let t = ctx.input(|i| i.time);
+
         egui::SidePanel::left("Left").show(ctx, |ui| {
             ui.heading("Hello");
         });
@@ -54,7 +56,7 @@ impl eframe::App for App {
             })
             .show(ctx, |ui| {
                 egui::Frame::canvas(ui.style()).show(ui, |ui| {
-                    self.custom_painting(ui);
+                    self.custom_painting(ui, t);
                 });
             });
 
@@ -63,7 +65,7 @@ impl eframe::App for App {
 }
 
 impl App {
-    fn custom_painting(&mut self, ui: &mut egui::Ui) {
+    fn custom_painting(&mut self, ui: &mut egui::Ui, t: f64) {
         let size = ui.available_size();
         let (_, rect) = ui.allocate_space(size);
 
@@ -85,7 +87,7 @@ impl App {
 
         ui.painter().add(egui_wgpu::Callback::new_paint_callback(
             rect,
-            RendererCallback { fs_event, size },
+            RendererCallback { fs_event, size, t },
         ));
     }
 }
@@ -93,6 +95,7 @@ impl App {
 pub struct RendererCallback {
     fs_event: Option<notify::Event>,
     size: emath::Vec2,
+    t: f64,
 }
 
 impl RendererCallback {
@@ -139,8 +142,9 @@ impl egui_wgpu::CallbackTrait for RendererCallback {
         self.handle_fs(renderer, compute, device);
         if renderer.check_resize(device, [self.size.x as u32, self.size.y as u32]) {
             compute.update_texture(device, &renderer.texture);
-            compute.update_data(queue, [renderer.texture.width, renderer.texture.height]);
+            compute.update_texture_size(queue, [renderer.texture.width, renderer.texture.height]);
         }
+        compute.update_time(queue, self.t as f32);
 
         compute.step(device, queue);
 

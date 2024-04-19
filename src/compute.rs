@@ -30,6 +30,8 @@ impl Compute {
         let data = ComputeDataUniform {
             width: texture.width,
             height: texture.height,
+
+            t: 0.,
         };
         let data_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: None,
@@ -193,9 +195,14 @@ impl Compute {
         })
     }
 
-    pub fn update_data(&mut self, queue: &wgpu::Queue, texture_dim: [u32; 2]) {
+    pub fn update_texture_size(&mut self, queue: &wgpu::Queue, texture_dim: [u32; 2]) {
         self.data.width = texture_dim[0];
         self.data.height = texture_dim[1];
+        queue.write_buffer(&self.data_buffer, 0, bytemuck::cast_slice(&[self.data]));
+    }
+
+    pub fn update_time(&mut self, queue: &wgpu::Queue, t: f32) {
+        self.data.t = t;
         queue.write_buffer(&self.data_buffer, 0, bytemuck::cast_slice(&[self.data]));
     }
 }
@@ -205,4 +212,6 @@ impl Compute {
 struct ComputeDataUniform {
     width: u32,
     height: u32,
+
+    t: f32,
 }

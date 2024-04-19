@@ -1,6 +1,7 @@
 struct Data {
     width: u32,
     height: u32,
+    t: f32,
 };
 
 @group(0) @binding(0) var<uniform> data: Data;
@@ -40,6 +41,6 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
 }
 
 fn sdf(p: vec3<f32>) -> f32 {
-    return length(p) - 1;
+    return length(p) - 1 + sin(data.t * 3) / 2;
 }
 
