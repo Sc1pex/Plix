@@ -1,6 +1,7 @@
 use crate::texture::Texture;
 use bytemuck::{Pod, Zeroable};
 use eframe::wgpu::{self, util::DeviceExt};
+use pollster::FutureExt;
 
 pub struct Compute {
     pipeline: wgpu::ComputePipeline,
@@ -118,6 +119,7 @@ impl Compute {
     }
 
     pub fn reload_shader(&mut self, device: &wgpu::Device) {
+        device.push_error_scope(wgpu::ErrorFilter::Validation);
         self.compute_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: None,
             source: wgpu::ShaderSource::Wgsl(
@@ -126,6 +128,11 @@ impl Compute {
                     .into(),
             ),
         });
+
+        if let Some(e) = device.pop_error_scope().block_on() {
+            println!("Error in compute shader!!:{}", e);
+            return;
+        }
 
         self.pipeline = Self::create_pipeline(
             device,

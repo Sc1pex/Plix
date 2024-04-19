@@ -4,6 +4,7 @@ use eframe::{
     egui_wgpu,
     wgpu::{self, util::DeviceExt},
 };
+use pollster::FutureExt;
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
@@ -136,6 +137,7 @@ impl Renderer {
     }
 
     pub fn reload_shader(&mut self, device: &wgpu::Device) {
+        device.push_error_scope(wgpu::ErrorFilter::Validation);
         self.shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: None,
             source: wgpu::ShaderSource::Wgsl(
@@ -144,6 +146,11 @@ impl Renderer {
                     .into(),
             ),
         });
+
+        if let Some(e) = device.pop_error_scope().block_on() {
+            println!("Error in renderer shader!!:{}", e);
+            return;
+        }
 
         self.pipeline = Self::create_pipeline(
             self.target_format.clone(),
