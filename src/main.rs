@@ -4,6 +4,7 @@ use eframe::egui;
 mod app;
 mod compute;
 mod renderer;
+mod texture;
 
 fn main() -> eframe::Result<()> {
     let options = eframe::NativeOptions {
