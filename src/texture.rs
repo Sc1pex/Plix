@@ -6,6 +6,7 @@ pub struct Texture {
 
     pub view: wgpu::TextureView,
     pub format: wgpu::TextureFormat,
+    pub inner: wgpu::Texture,
     sampler: wgpu::Sampler,
 }
 
@@ -15,6 +16,7 @@ impl Texture {
         height: u32,
         format: wgpu::TextureFormat,
         device: &wgpu::Device,
+        usage: wgpu::TextureUsages,
     ) -> Self {
         let texture = device.create_texture(&wgpu::TextureDescriptor {
             label: None,
@@ -27,7 +29,7 @@ impl Texture {
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
             format,
-            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::STORAGE_BINDING,
+            usage,
             view_formats: &[],
         });
 
@@ -49,6 +51,7 @@ impl Texture {
             view,
             format,
             sampler,
+            inner: texture,
         }
     }
 

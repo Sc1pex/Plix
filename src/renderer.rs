@@ -59,7 +59,13 @@ impl Renderer {
         let device = &render_state.device;
 
         let texture_format = wgpu::TextureFormat::Rgba8Unorm;
-        let texture = Texture::new(dim[0], dim[1], texture_format, device);
+        let texture = Texture::new(
+            dim[0],
+            dim[1],
+            texture_format,
+            device,
+            wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::STORAGE_BINDING,
+        );
 
         let texture_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -162,7 +168,13 @@ impl Renderer {
 
     pub fn check_resize(&mut self, device: &wgpu::Device, dim: [u32; 2]) -> bool {
         if self.texture.width != dim[0] || self.texture.height != dim[1] {
-            self.texture = Texture::new(dim[0], dim[1], self.texture.format, device);
+            self.texture = Texture::new(
+                dim[0],
+                dim[1],
+                self.texture.format,
+                device,
+                wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::STORAGE_BINDING,
+            );
 
             self.texture_bind_group_layout =
                 device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {

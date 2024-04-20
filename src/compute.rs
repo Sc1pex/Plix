@@ -101,7 +101,16 @@ impl Compute {
         }
     }
 
-    pub fn step(&self, device: &wgpu::Device, queue: &wgpu::Queue) {
+    pub fn step(
+        &self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        before_submit: Option<(
+            wgpu::ImageCopyTexture,
+            wgpu::ImageCopyBuffer,
+            wgpu::Extent3d,
+        )>,
+    ) {
         let mut encoder =
             device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
 
@@ -115,6 +124,10 @@ impl Compute {
             cpass.set_bind_group(0, &self.data_bind_group, &[]);
             cpass.set_bind_group(1, &self.texture_bind_group, &[]);
             cpass.dispatch_workgroups(self.data.width, self.data.height, 1);
+        }
+
+        if let Some((texture, buf, size)) = before_submit {
+            encoder.copy_texture_to_buffer(texture, buf, size);
         }
 
         queue.submit(Some(encoder.finish()));

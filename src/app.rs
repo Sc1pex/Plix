@@ -1,4 +1,5 @@
 use crate::compute::Compute;
+use crate::export::Export;
 use crate::renderer::Renderer;
 use eframe::{egui, emath, CreationContext};
 use eframe::{egui_wgpu, wgpu};
@@ -7,6 +8,8 @@ use notify::Watcher;
 pub struct App {
     fs_rx: std::sync::mpsc::Receiver<Result<notify::Event, notify::Error>>,
     _watcher: notify::RecommendedWatcher,
+
+    export: Export,
 }
 
 impl App {
@@ -33,6 +36,8 @@ impl App {
         Some(Self {
             fs_rx: rx,
             _watcher: watcher,
+
+            export: Export::new(),
         })
     }
 }
@@ -42,7 +47,7 @@ impl eframe::App for App {
         let t = ctx.input(|i| i.time);
 
         egui::SidePanel::left("Left").show(ctx, |ui| {
-            ui.heading("Hello");
+            self.export.render_save_ui(ui);
         });
         egui::CentralPanel::default()
             .frame(egui::Frame {
@@ -95,6 +100,7 @@ impl App {
 pub struct RendererCallback {
     fs_event: Option<notify::Event>,
     size: emath::Vec2,
+
     t: f64,
 }
 
@@ -146,7 +152,7 @@ impl egui_wgpu::CallbackTrait for RendererCallback {
         }
         compute.update_time(queue, self.t as f32);
 
-        compute.step(device, queue);
+        compute.step(device, queue, None);
 
         Vec::new()
     }
