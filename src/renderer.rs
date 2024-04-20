@@ -4,7 +4,6 @@ use eframe::{
     egui_wgpu,
     wgpu::{self, util::DeviceExt},
 };
-use pollster::FutureExt;
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
@@ -140,30 +139,6 @@ impl Renderer {
             texture_bind_group,
             texture_bind_group_layout,
         }
-    }
-
-    pub fn reload_shader(&mut self, device: &wgpu::Device) {
-        device.push_error_scope(wgpu::ErrorFilter::Validation);
-        self.shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: None,
-            source: wgpu::ShaderSource::Wgsl(
-                std::fs::read_to_string("src/render.wgsl")
-                    .expect("Shader not found")
-                    .into(),
-            ),
-        });
-
-        if let Some(e) = device.pop_error_scope().block_on() {
-            println!("Error in renderer shader!!:{}", e);
-            return;
-        }
-
-        self.pipeline = Self::create_pipeline(
-            self.target_format.clone(),
-            &self.shader,
-            &[&self.texture_bind_group_layout],
-            device,
-        );
     }
 
     pub fn check_resize(&mut self, device: &wgpu::Device, dim: [u32; 2]) -> bool {

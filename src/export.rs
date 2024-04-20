@@ -20,16 +20,15 @@ pub struct Export {
 
     start_export: mpsc::Sender<ExportData>,
     export_com: mpsc::Receiver<Msg>,
-    thread: std::thread::JoinHandle<()>,
 
     thread_msg: String,
+    _thread: std::thread::JoinHandle<()>,
 }
 
 #[derive(Debug, PartialEq)]
 enum State {
     Waiting,
     Generating,
-    Writing,
 }
 
 enum Msg {
@@ -54,7 +53,7 @@ impl Export {
 
             start_export: start_tx,
             export_com: com_rx,
-            thread,
+            _thread: thread,
 
             thread_msg: String::new(),
         }
@@ -66,7 +65,6 @@ impl Export {
             .show(ui, |ui| match self.state {
                 State::Waiting => self.render_waiting(ui),
                 State::Generating => self.render_generating(ui),
-                State::Writing => todo!(),
             });
     }
 
@@ -147,7 +145,7 @@ async fn export_thread_internal(data: ExportData, com: mpsc::Sender<Msg>) {
         wgpu::TextureUsages::COPY_SRC | wgpu::TextureUsages::STORAGE_BINDING,
     );
     let texture_copy = texture.inner.as_image_copy();
-    let mut compute = Compute::new(&device, &texture);
+    let mut compute = Compute::new(&device, &texture, "shaders/circle.wgsl");
 
     let fps = 60.;
     let time_per_frame = 1. / fps;
@@ -220,6 +218,7 @@ async fn export_thread_internal(data: ExportData, com: mpsc::Sender<Msg>) {
 }
 
 fn make_video(com: mpsc::Sender<Msg>) {
+    com.send(Msg::Info("Converting to video".into())).unwrap();
     let file_name = format!("output/{}.mp4", chrono::Utc::now().format("%Y%m%d_%H%M"));
 
     match std::process::Command::new("ffmpeg")

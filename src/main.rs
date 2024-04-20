@@ -5,6 +5,7 @@ mod app;
 mod compute;
 mod export;
 mod renderer;
+mod shader_manager;
 mod texture;
 
 fn main() -> eframe::Result<()> {

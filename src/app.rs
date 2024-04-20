@@ -1,22 +1,30 @@
+use std::sync::mpsc;
+
 use crate::compute::Compute;
 use crate::export::Export;
 use crate::renderer::Renderer;
+use crate::shader_manager::ShaderManager;
 use eframe::{egui, emath, CreationContext};
 use eframe::{egui_wgpu, wgpu};
-use notify::Watcher;
 
 pub struct App {
-    fs_rx: std::sync::mpsc::Receiver<Result<notify::Event, notify::Error>>,
-    _watcher: notify::RecommendedWatcher,
-
     export: Export,
+    shader_manager: ShaderManager,
+    shader_manager_rx: mpsc::Receiver<String>,
 }
 
 impl App {
     pub fn new(cc: &CreationContext) -> Option<Self> {
+        let (tx, rx) = mpsc::channel();
+        let shader_manager = ShaderManager::new(tx)?;
+
         let wgpu_render_state = cc.wgpu_render_state.as_ref()?;
         let renderer = Renderer::new(wgpu_render_state, [10, 10]);
-        let compute = Compute::new(&wgpu_render_state.device, &renderer.texture);
+        let compute = Compute::new(
+            &wgpu_render_state.device,
+            &renderer.texture,
+            shader_manager.selected(),
+        );
 
         wgpu_render_state
             .renderer
@@ -24,20 +32,10 @@ impl App {
             .callback_resources
             .insert((renderer, compute));
 
-        let (tx, rx) = std::sync::mpsc::channel();
-        let mut watcher = notify::RecommendedWatcher::new(tx, notify::Config::default()).ok()?;
-        watcher
-            .watch(
-                std::path::Path::new("src/"),
-                notify::RecursiveMode::Recursive,
-            )
-            .ok()?;
-
         Some(Self {
-            fs_rx: rx,
-            _watcher: watcher,
-
             export: Export::new(),
+            shader_manager,
+            shader_manager_rx: rx,
         })
     }
 }
@@ -46,9 +44,13 @@ impl eframe::App for App {
     fn update(&mut self, ctx: &eframe::egui::Context, _frame: &mut eframe::Frame) {
         let t = ctx.input(|i| i.time);
 
+        self.shader_manager.update();
         egui::SidePanel::left("Left").show(ctx, |ui| {
+            self.shader_manager.render_ui(ui);
+            ui.add_space(40.);
             self.export.render_save_ui(ui);
         });
+
         egui::CentralPanel::default()
             .frame(egui::Frame {
                 inner_margin: egui::Margin {
@@ -74,64 +76,24 @@ impl App {
         let size = ui.available_size();
         let (_, rect) = ui.allocate_space(size);
 
-        let fs_event = match self.fs_rx.try_recv() {
-            Ok(e) => match e {
-                Ok(e) => Some(e),
-                Err(e) => {
-                    println!("Fs watcher error: {}", e);
-                    None
-                }
-            },
-            Err(e) => {
-                if matches!(e, std::sync::mpsc::TryRecvError::Disconnected) {
-                    println!("Fs watcher channel closed")
-                }
-                None
-            }
-        };
+        let reload_shader = self.shader_manager_rx.try_recv().ok();
 
         ui.painter().add(egui_wgpu::Callback::new_paint_callback(
             rect,
-            RendererCallback { fs_event, size, t },
+            RendererCallback {
+                reload_shader,
+                size,
+                t,
+            },
         ));
     }
 }
 
 pub struct RendererCallback {
-    fs_event: Option<notify::Event>,
+    reload_shader: Option<String>,
     size: emath::Vec2,
 
     t: f64,
-}
-
-impl RendererCallback {
-    fn handle_fs(
-        &self,
-        renderer: &mut Renderer,
-        compute: &mut Compute,
-        device: &wgpu::Device,
-    ) -> Option<()> {
-        let event = self.fs_event.clone()?;
-        if matches!(
-            event,
-            notify::Event {
-                kind: notify::EventKind::Access(notify::event::AccessKind::Close(
-                    notify::event::AccessMode::Write
-                )),
-                ..
-            }
-        ) {
-            let path = event.paths.first()?.to_str()?;
-            if path.contains("render.wgsl") {
-                renderer.reload_shader(device);
-            }
-            if path.contains("compute.wgsl") {
-                compute.reload_shader(device);
-            }
-        }
-
-        Some(())
-    }
 }
 
 impl egui_wgpu::CallbackTrait for RendererCallback {
@@ -145,7 +107,10 @@ impl egui_wgpu::CallbackTrait for RendererCallback {
     ) -> Vec<wgpu::CommandBuffer> {
         let (renderer, compute): &mut (Renderer, Compute) = resources.get_mut().unwrap();
 
-        self.handle_fs(renderer, compute, device);
+        if let Some(s) = self.reload_shader.as_ref() {
+            compute.reload_shader(device, s);
+        }
+
         if renderer.check_resize(device, [self.size.x as u32, self.size.y as u32]) {
             compute.update_texture(device, &renderer.texture);
             compute.update_texture_size(queue, [renderer.texture.width, renderer.texture.height]);

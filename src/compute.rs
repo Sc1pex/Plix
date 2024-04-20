@@ -17,11 +17,11 @@ pub struct Compute {
 }
 
 impl Compute {
-    pub fn new(device: &wgpu::Device, texture: &Texture) -> Self {
+    pub fn new(device: &wgpu::Device, texture: &Texture, shader_path: &str) -> Self {
         let compute_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: None,
             source: wgpu::ShaderSource::Wgsl(
-                std::fs::read_to_string("src/compute.wgsl")
+                std::fs::read_to_string(shader_path)
                     .expect("Compute shader not found")
                     .into(),
             ),
@@ -133,30 +133,32 @@ impl Compute {
         queue.submit(Some(encoder.finish()));
     }
 
-    pub fn reload_shader(&mut self, device: &wgpu::Device) {
+    pub fn reload_shader(&mut self, device: &wgpu::Device, shader_path: &str) {
         device.push_error_scope(wgpu::ErrorFilter::Validation);
-        self.compute_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        let compute_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: None,
             source: wgpu::ShaderSource::Wgsl(
-                std::fs::read_to_string("src/compute.wgsl")
+                std::fs::read_to_string(shader_path)
                     .expect("Compute shader not found")
                     .into(),
             ),
         });
 
-        if let Some(e) = device.pop_error_scope().block_on() {
-            println!("Error in compute shader!!:{}", e);
-            return;
-        }
-
-        self.pipeline = Self::create_pipeline(
+        device.push_error_scope(wgpu::ErrorFilter::Validation);
+        let pipeline = Self::create_pipeline(
             device,
-            &self.compute_shader,
+            &compute_shader,
             &[
                 &self.data_bind_group_layout,
                 &self.texture_bind_group_layout,
             ],
         );
+        if let Some(e) = device.pop_error_scope().block_on() {
+            println!("Error in compute shader!!:{}", e);
+            return;
+        }
+        self.compute_shader = compute_shader;
+        self.pipeline = pipeline;
     }
 
     pub fn update_texture(&mut self, device: &wgpu::Device, texture: &Texture) {
