@@ -7,11 +7,13 @@ use std::sync::mpsc;
 
 use crate::{compute::Compute, texture::Texture};
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 struct ExportData {
     width: u32,
     height: u32,
     duration: f32,
+
+    shader: String,
 }
 
 pub struct Export {
@@ -37,7 +39,7 @@ enum Msg {
 }
 
 impl Export {
-    pub fn new() -> Self {
+    pub fn new(shader: String) -> Self {
         let (start_tx, start_rx) = mpsc::channel();
         let (com_tx, com_rx) = mpsc::channel();
 
@@ -48,6 +50,8 @@ impl Export {
                 width: 800,
                 height: 800,
                 duration: 5.,
+
+                shader,
             },
             state: State::Waiting,
 
@@ -57,6 +61,10 @@ impl Export {
 
             thread_msg: String::new(),
         }
+    }
+
+    pub fn set_shader(&mut self, shader: String) {
+        self.data.shader = shader;
     }
 
     pub fn render_save_ui(&mut self, ui: &mut egui::Ui) {
@@ -93,7 +101,6 @@ impl Export {
         if ui.button("Export").clicked() {
             self.state = State::Generating;
             let _ = self.start_export.send(self.data.clone());
-            println!("start export");
         }
     }
 }
@@ -145,7 +152,7 @@ async fn export_thread_internal(data: ExportData, com: mpsc::Sender<Msg>) {
         wgpu::TextureUsages::COPY_SRC | wgpu::TextureUsages::STORAGE_BINDING,
     );
     let texture_copy = texture.inner.as_image_copy();
-    let mut compute = Compute::new(&device, &texture, "shaders/circle.wgsl");
+    let mut compute = Compute::new(&device, &texture, &data.shader);
 
     let fps = 60.;
     let time_per_frame = 1. / fps;
@@ -205,7 +212,7 @@ async fn export_thread_internal(data: ExportData, com: mpsc::Sender<Msg>) {
             ]);
         }
         imgbuf
-            .save(format!("output/tmp/image_{}.png", frame))
+            .save(format!("output/tmp/image_{}.png", frame + 1))
             .unwrap();
 
         com.send(Msg::Info(format!(
@@ -214,12 +221,12 @@ async fn export_thread_internal(data: ExportData, com: mpsc::Sender<Msg>) {
         )))
         .unwrap();
     }
-    make_video(com.clone());
+    make_video(com.clone(), frame_count);
 }
 
-fn make_video(com: mpsc::Sender<Msg>) {
+fn make_video(com: mpsc::Sender<Msg>, frames: usize) {
     com.send(Msg::Info("Converting to video".into())).unwrap();
-    let file_name = format!("output/{}.mp4", chrono::Utc::now().format("%Y%m%d_%H%M"));
+    let file_name = format!("output/{}.mp4", chrono::Utc::now().format("%Y%m%d_%H%M%S"));
 
     match std::process::Command::new("ffmpeg")
         .arg("-framerate")
@@ -230,6 +237,8 @@ fn make_video(com: mpsc::Sender<Msg>) {
         .arg("libx264")
         .arg("-r")
         .arg("60")
+        .arg("-frames:v")
+        .arg(frames.to_string())
         .arg(&file_name)
         .output()
     {

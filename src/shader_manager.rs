@@ -61,7 +61,7 @@ impl ShaderManager {
                 }
             ) {
                 let path = e.paths.first().unwrap().to_str().unwrap();
-                if path == self.selected {
+                if path.contains(&self.selected) {
                     self.app_tx.send(self.selected.clone()).unwrap();
                 } else {
                     self.scan();
@@ -80,6 +80,7 @@ impl ShaderManager {
                 self.shaders.push(file.to_str().unwrap().into());
             }
         }
+        self.shaders.sort();
 
         if !self.shaders.contains(&self.selected) {
             self.selected = self.shaders[0].clone();

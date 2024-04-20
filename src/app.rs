@@ -35,7 +35,7 @@ impl App {
             .insert((renderer, compute));
 
         Some(Self {
-            export: Export::new(),
+            export: Export::new(shader_manager.selected().into()),
             shader_manager,
             shader_manager_rx: rx,
 
@@ -62,6 +62,13 @@ impl eframe::App for App {
             });
         }
 
+        let reload_shader = if let Ok(s) = self.shader_manager_rx.try_recv() {
+            self.export.set_shader(s.clone());
+            Some(s)
+        } else {
+            None
+        };
+
         egui::CentralPanel::default()
             .frame(egui::Frame {
                 inner_margin: egui::Margin {
@@ -74,7 +81,7 @@ impl eframe::App for App {
             })
             .show(ctx, |ui| {
                 egui::Frame::canvas(ui.style()).show(ui, |ui| {
-                    self.custom_painting(ui, t);
+                    self.custom_painting(ui, t, reload_shader);
                 });
             });
 
@@ -83,11 +90,9 @@ impl eframe::App for App {
 }
 
 impl App {
-    fn custom_painting(&mut self, ui: &mut egui::Ui, t: f64) {
+    fn custom_painting(&mut self, ui: &mut egui::Ui, t: f64, reload_shader: Option<String>) {
         let size = ui.available_size();
         let (_, rect) = ui.allocate_space(size);
-
-        let reload_shader = self.shader_manager_rx.try_recv().ok();
 
         ui.painter().add(egui_wgpu::Callback::new_paint_callback(
             rect,
