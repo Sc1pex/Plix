@@ -83,6 +83,7 @@ impl ShaderManager {
 
         if !self.shaders.contains(&self.selected) {
             self.selected = self.shaders[0].clone();
+            self.app_tx.send(self.selected.clone()).unwrap();
         }
     }
 
