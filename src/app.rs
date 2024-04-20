@@ -11,6 +11,8 @@ pub struct App {
     export: Export,
     shader_manager: ShaderManager,
     shader_manager_rx: mpsc::Receiver<String>,
+
+    show_menu: bool,
 }
 
 impl App {
@@ -36,6 +38,8 @@ impl App {
             export: Export::new(),
             shader_manager,
             shader_manager_rx: rx,
+
+            show_menu: true,
         })
     }
 }
@@ -43,13 +47,20 @@ impl App {
 impl eframe::App for App {
     fn update(&mut self, ctx: &eframe::egui::Context, _frame: &mut eframe::Frame) {
         let t = ctx.input(|i| i.time);
+        ctx.input(|i| {
+            if i.key_pressed(egui::Key::M) {
+                self.show_menu = !self.show_menu;
+            }
+        });
 
         self.shader_manager.update();
-        egui::SidePanel::left("Left").show(ctx, |ui| {
-            self.shader_manager.render_ui(ui);
-            ui.add_space(40.);
-            self.export.render_save_ui(ui);
-        });
+        if self.show_menu {
+            egui::SidePanel::left("Left").show(ctx, |ui| {
+                self.shader_manager.render_ui(ui);
+                ui.add_space(40.);
+                self.export.render_save_ui(ui);
+            });
+        }
 
         egui::CentralPanel::default()
             .frame(egui::Frame {
